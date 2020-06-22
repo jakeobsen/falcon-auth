@@ -1,0 +1,2 @@
+main:
+	gunicorn main:api
