@@ -2,3 +2,6 @@ config.ini
 venv/
 .idea/
 __pycache__/
+*.key
+*.key.pub
+setup.sh

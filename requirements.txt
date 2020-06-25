@@ -1,2 +1,6 @@
 falcon
 gunicorn
+pyjwt
+cryptography
+redis
+mysql-connector
