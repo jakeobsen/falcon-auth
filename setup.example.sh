@@ -6,6 +6,9 @@ export MYSQL_USER=""
 export MYSQL_PASSWORD=""
 export MYSQL_HOST="localhost"
 export MYSQL_DATABASE=""
+export REDIS_HOST="localhost"
+export REDIS_PORT="6379"
+export REDIS_DB="0"
 
 . venv/bin/activate
 
