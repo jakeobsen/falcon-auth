@@ -9,15 +9,14 @@ import json
 import logging
 from os import environ
 from time import time
+from password import new_hash, hash_verify
 
 import falcon
 import jwt
-import redis
 
 
 class ValidateLogin:
     def __init__(self, mysql_connection):
-        self.redis = redis.Redis(host='localhost', port=6379, db=0)
         self.mysql = mysql_connection
 
     @staticmethod
@@ -35,11 +34,17 @@ class ValidateLogin:
                 "username": username,
                 "name": name,
                 "uid": uuid,
-                "iat": int(time())
+                "iat": int(time()),
+                "nbf": int(time()),
+                "exp": int(time()) + 3600
             }, environ["JWT_PRIVKEY"], algorithm='RS256').decode()
         }
 
-    def on_post(self, req, resp):
+    def on_get(self, req, resp) -> None:
+        """Handles GET requests"""
+        raise falcon.HTTPBadRequest("This endpoint only support POST requests.")
+
+    def on_post(self, req, resp) -> None:
         """Handles POST requests"""
 
         try:
@@ -49,82 +54,53 @@ class ValidateLogin:
             raise falcon.HTTPBadRequest('JSON Body Missing')
 
         try:
-            username = doc["username"]
+            req_username = doc["username"]
         except KeyError as e:
             logging.debug(str(e))
             raise falcon.HTTPMissingParam("username")
 
         try:
-            password = doc["password"]
+            req_password = doc["password"]
         except KeyError as e:
             logging.debug(str(e))
             raise falcon.HTTPMissingParam("password")
 
-        # Cache lookup
-        username_hash = hashlib.sha256(username.encode()).hexdigest()
-        password_hash = hashlib.sha256(password.encode()).hexdigest()
-        cache_data = self.redis.get(f"login_cache_{username_hash}")
+        # SQL Result
+        cursor = self.mysql.cursor()
+        cursor.execute("SELECT `username`, `password`, `uuid`, `name` FROM `users` "
+                       "WHERE `username`=%s LIMIT 1", (req_username,))
 
-        # If a cached result exists in redis, then use that for authentication
-        # otherwise lookup in SQL database
-
-        if cache_data:
-            # Cached result
-            cache = json.loads(cache_data)
-            if all(key in cache for key in ("username", "password", "name", "uuid")):
-                if cache['username'] == username and cache['password'] == password_hash:
-                    resp.context.result = self.result(
-                        username=cache['username'],
-                        name=cache['name'],
-                        uuid=cache['uuid'],
-                    )
-                else:
-                    raise falcon.HTTPUnauthorized(
-                        "Invalid Login",
-                        "Wrong username or password"
-                    )
+        for (username, password, uuid, name) in cursor:
+            sql_username = username
+            sql_password = password
+            sql_name = name
+            sql_uid = uuid
+            break
         else:
-            # SQL Result
-            cursor = self.mysql.cursor()
-            cursor.execute("SELECT `username`, `password`, `uuid`, `name` FROM `users` "
-                           "WHERE `username`=%s and `password`=%s LIMIT 1", (username, password_hash))
+            raise falcon.HTTPUnauthorized(
+                "Invalid Login",
+                "Wrong username or password"
+            )
+        cursor.close()
+        # SQL End
 
-            for (username, password, uuid, name) in cursor:
-                sql_username = username
-                sql_name = name
-                sql_password = password
-                sql_uid = uuid
-                break
-            else:
-                raise falcon.HTTPUnauthorized(
-                    "Invalid Login",
-                    "Wrong username or password"
-                )
-            cursor.close()
-            # SQL End
-
-            # Update cache
-            self.redis.set(f"login_cache_{username_hash}", json.dumps({
-                "username": sql_username,
-                "name": sql_name,
-                "uuid": sql_uid,
-                "password": sql_password
-            }))
-            self.redis.expire(f"login_cache_{username_hash}", 3600)
-
-            # Response
+        if hash_verify(req_password, sql_password):
             resp.context.result = self.result(
                 username=sql_username,
                 name=sql_name,
                 uuid=sql_uid,
             )
-
+        else:
+            raise falcon.HTTPUnauthorized(
+                "Invalid Login",
+                "Wrong username or password"
+            )
 
 # This is a debug class for now - it validates an issued JWT
 # and returns it's content if it's valid otherwise an error
 class ValidateJWT:
     # noinspection PyMethodMayBeStatic
-    def on_post(self, req, resp):
+    def on_post(self, req, resp) -> None:
         """Handles POST requests"""
 
         try:
@@ -135,7 +111,16 @@ class ValidateJWT:
         try:
             data = jwt.decode(doc['jwt'], environ["JWT_PUBKEY"], algorithms='RS256')
         except Exception as e:
-            raise falcon.HTTPBadRequest(str(e))
+            logging.debug(str(e))
+            raise falcon.HTTPUnauthorized(str(e))
+
+        now = int(time())
+        if data['nbf'] > now:
+            logging.debug("Tried to auth a JWT from the future")
+            raise falcon.HTTPUnauthorized(
+                "Authorisation Token Invalid",
+                "The supplied token has been issued in the future. It is invalid."
+            )
 
         resp.context.result = {
             "jwt_content": data
