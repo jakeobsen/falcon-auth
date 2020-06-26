@@ -7,6 +7,9 @@
 # Default falcon middleware
 
 import json
+from os import environ
+import jwt
+from time import time
 
 import falcon
 
@@ -15,15 +18,11 @@ class RequireJSON(object):
 
     def process_request(self, req, resp):
         if not req.client_accepts_json:
-            raise falcon.HTTPNotAcceptable(
-                'This API only supports responses encoded as JSON.',
-                href='http://docs.examples.com/api/json')
+            raise falcon.HTTPNotAcceptable('This API only supports responses encoded as JSON.')
 
         if req.method in ('POST', 'PUT'):
-            if 'application/json' not in req.content_type:
-                raise falcon.HTTPUnsupportedMediaType(
-                    'This API only supports requests encoded as JSON.',
-                    href='http://docs.examples.com/api/json')
+            if req.content_type is None or 'application/json' not in req.content_type:
+                raise falcon.HTTPUnsupportedMediaType('This API only supports requests encoded as JSON.')
 
 
 class JSONTranslator(object):
@@ -41,8 +40,7 @@ class JSONTranslator(object):
 
         body = req.stream.read()
         if not body:
-            raise falcon.HTTPBadRequest('Empty request body',
-                                        'A valid JSON document is required.')
+            raise falcon.HTTPBadRequest('Empty request body', 'A valid JSON document is required.')
 
         try:
             req.context.doc = json.loads(body.decode('utf-8'))
@@ -58,6 +56,41 @@ class JSONTranslator(object):
         if not hasattr(resp.context, 'result'):
             return
         resp.body = json.dumps(resp.context.result)
+
+
+class AuthMiddleware(object):
+
+    def process_request(self, req, resp):
+        token = req.get_header('Authorization')
+
+        if req.relative_uri == "/auth" and req.method == "POST":
+            pass
+        else:
+            if token is None:
+                raise falcon.HTTPUnauthorized('Auth token required',
+                                              'Please provide an auth token '
+                                              'as part of the request.')
+
+            if not self._token_is_valid(token):
+                raise falcon.HTTPUnauthorized('Authentication required',
+                                              'The provided auth token is not valid. '
+                                              'Please request a new token and try again.')
+
+    def _token_is_valid(self, token):
+        """Handles GET requests"""
+        doc = token.split(" ")[1]
+        data = {}
+
+        try:
+            data = jwt.decode(doc, environ["JWT_PUBKEY"], algorithms='RS256')
+            token_validity = True
+        except Exception:
+            token_validity = False
+
+        if 'nbf' in data and data['nbf'] > int(time()):
+            token_validity = False
+
+        return token_validity
 
         # if req.content_type == "application/json":
         #     if req.content_length:
