@@ -4,15 +4,14 @@
 # This software is licensed under the BSD 2-Clause License
 # Please see LICENSE for more information.
 
-import hashlib
-import json
 import logging
 from os import environ
 from time import time
-from password import new_hash, hash_verify
 
 import falcon
 import jwt
+
+from password import hash_verify
 
 
 class ValidateLogin:
@@ -67,8 +66,8 @@ class ValidateLogin:
 
         # SQL Result
         cursor = self.mysql.cursor()
-        cursor.execute("SELECT `username`, `password`, `uuid`, `name` FROM `users` "
-                       "WHERE `username`=%s LIMIT 1", (req_username,))
+        cursor.execute("SELECT `username`, `password`, `uuid`, `name` FROM `users` WHERE `username`=%s LIMIT 1",
+                       (req_username,))
 
         for (username, password, uuid, name) in cursor:
             sql_username = username
@@ -84,7 +83,12 @@ class ValidateLogin:
         cursor.close()
         # SQL End
 
+        # Validate hash
         if hash_verify(req_password, sql_password):
+
+            # Todo: add session info to redis cache
+
+            # Return JWT
             resp.context.result = self.result(
                 username=sql_username,
                 name=sql_name,
@@ -95,6 +99,7 @@ class ValidateLogin:
                 "Invalid Login",
                 "Wrong username or password"
             )
+
 
 # This is a debug class for now - it validates an issued JWT
 # and returns it's content if it's valid otherwise an error
