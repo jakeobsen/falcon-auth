@@ -56,10 +56,10 @@ class ResetPassword:
         self.mysql = mysql_connection
 
     def on_post(self, req, resp, uuid=None) -> None:
-        cursor = self.mysql.cursor()
-        cursor.execute("UPDATE `users` SET password=%s WHERE `uuid`=%s LIMIT 1",
-                       (uuid,))
-        cursor.close()
+        #cursor = self.mysql.cursor()
+        #cursor.execute("UPDATE `users` SET password=%s WHERE `uuid`=%s LIMIT 1",
+        #               (uuid,))
+        #cursor.close()
         resp.context.result = {
             "title": "Password changed"
         }
