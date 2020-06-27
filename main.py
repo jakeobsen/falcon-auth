@@ -11,9 +11,9 @@ import mysql.connector.pooling
 import redis
 from falcon import API
 
+from AuthAPI.account import User, ResetPassword
 from AuthAPI.authentication import ValidateLogin
 from middleware import RequireJSON, JSONTranslator, AuthMiddleware
-from AuthAPI.account import User, ResetPassword
 
 # Debug Level
 logging.basicConfig(level=logging.DEBUG)
